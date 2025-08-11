@@ -21,14 +21,14 @@ use ark_r1cs_std::{
     pairing::PairingVar,
     uint8::UInt8,
 };
-use ark_relations::r1cs::{Namespace, SynthesisError};
+use ark_relations::gr1cs::{Namespace, SynthesisError};
 use ark_std::{borrow::Borrow, marker::PhantomData, vec::Vec};
 
 type BasePrimeField<E> = <<E as Pairing>::BaseField as Field>::BasePrimeField;
 
 /// The proof variable for the Groth16 construction
-#[derive(Derivative)]
-#[derivative(Clone(bound = "P::G1Var: Clone, P::G2Var: Clone"))]
+#[derive(educe::Educe)]
+#[educe(Clone(bound = "P::G1Var: Clone, P::G2Var: Clone"))]
 pub struct ProofVar<E: Pairing, P: PairingVar<E>> {
     /// The `A` element in `G1`.
     pub a: P::G1Var,
@@ -39,8 +39,8 @@ pub struct ProofVar<E: Pairing, P: PairingVar<E>> {
 }
 
 /// A variable representing the Groth16 verifying key in the constraint system.
-#[derive(Derivative)]
-#[derivative(Clone(
+#[derive(educe::Educe)]
+#[educe(Clone(
     bound = "P::G1Var: Clone, P::GTVar: Clone, P::G1PreparedVar: Clone, P::G2PreparedVar: Clone"
 ))]
 pub struct VerifyingKeyVar<E: Pairing, P: PairingVar<E>> {
@@ -111,8 +111,8 @@ where
 
 /// Preprocessed verification key parameters variable for the Groth16
 /// construction
-#[derive(Derivative)]
-#[derivative(
+#[derive(educe::Educe)]
+#[educe(
     Clone(bound = "P::G1Var: Clone, P::GTVar: Clone, P::G1PreparedVar: Clone, \
     P::G2PreparedVar: Clone, ")
 )]
@@ -455,12 +455,13 @@ mod test {
     use ark_crypto_primitives::snark::{constraints::SNARKGadget, SNARK};
     use ark_ec::pairing::Pairing;
     use ark_ff::{Field, UniformRand};
-    use ark_mnt4_298::{constraints::PairingVar as MNT4PairingVar, Fr as MNT4Fr, MNT4_298 as MNT4};
-    use ark_mnt6_298::Fr as MNT6Fr;
+    use ark_mnt4_298::{
+        constraints::PairingVar as MNT4PairingVar, Fq as MNT6Fr, Fr as MNT4Fr, MNT4_298 as MNT4,
+    };
     use ark_r1cs_std::{alloc::AllocVar, boolean::Boolean, eq::EqGadget};
     use ark_relations::{
+        gr1cs::{ConstraintSynthesizer, ConstraintSystem, ConstraintSystemRef, SynthesisError},
         lc, ns,
-        r1cs::{ConstraintSynthesizer, ConstraintSystem, ConstraintSystemRef, SynthesisError},
     };
     use ark_std::{
         ops::MulAssign,
@@ -492,11 +493,12 @@ mod test {
             })?;
 
             for _ in 0..(self.num_variables - 3) {
-                cs.new_witness_variable(|| self.a.ok_or(SynthesisError::AssignmentMissing))?;
+                let _ =
+                    cs.new_witness_variable(|| self.a.ok_or(SynthesisError::AssignmentMissing))?;
             }
 
             for _ in 0..self.num_constraints {
-                cs.enforce_constraint(lc!() + a, lc!() + b, lc!() + c)
+                cs.enforce_r1cs_constraint(|| lc!() + a, || lc!() + b, || lc!() + c)
                     .unwrap();
             }
             Ok(())

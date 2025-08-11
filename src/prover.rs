@@ -2,14 +2,17 @@ use crate::{r1cs_to_qap::R1CSToQAP, Groth16, Proof, ProvingKey, VerifyingKey};
 use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup, VariableBaseMSM};
 use ark_ff::{Field, PrimeField, UniformRand, Zero};
 use ark_poly::GeneralEvaluationDomain;
-use ark_relations::r1cs::{
-    ConstraintMatrices, ConstraintSynthesizer, ConstraintSystem, OptimizationGoal,
-    Result as R1CSResult,
+use ark_relations::{
+    gr1cs::{
+        ConstraintSynthesizer, ConstraintSystem, OptimizationGoal, Result as R1CSResult,
+        SynthesisMode,
+    },
+    utils::matrix::Matrix,
 };
-use ark_std::rand::Rng;
 use ark_std::{
     cfg_into_iter, cfg_iter,
     ops::{AddAssign, Mul},
+    rand::Rng,
     vec::Vec,
 };
 
@@ -27,7 +30,7 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
         pk: &ProvingKey<E>,
         r: E::ScalarField,
         s: E::ScalarField,
-        matrices: &ConstraintMatrices<E::ScalarField>,
+        matrices: &[Matrix<E::ScalarField>],
         num_inputs: usize,
         num_constraints: usize,
         full_assignment: &[E::ScalarField],
@@ -186,16 +189,21 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
 
         // Set the optimization goal
         cs.set_optimization_goal(OptimizationGoal::Constraints);
+        cs.set_mode(SynthesisMode::Prove {
+            construct_matrices: true,
+            generate_lc_assignments: false,
+        });
 
         // Synthesize the circuit.
         let synthesis_time = start_timer!(|| "Constraint synthesis");
         circuit.generate_constraints(cs.clone())?;
-        debug_assert!(cs.is_satisfied().unwrap());
         end_timer!(synthesis_time);
 
         let lc_time = start_timer!(|| "Inlining LCs");
         cs.finalize();
         end_timer!(lc_time);
+
+        debug_assert!(cs.is_satisfied().unwrap());
 
         let witness_map_time = start_timer!(|| "R1CS to QAP witness map");
         let h = QAP::witness_map::<E::ScalarField, D<E::ScalarField>>(cs.clone())?;
@@ -207,8 +215,8 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
             r,
             s,
             &h,
-            &prover.instance_assignment[1..],
-            &prover.witness_assignment,
+            &prover.instance_assignment().unwrap()[1..],
+            &prover.witness_assignment().unwrap(),
         )?;
 
         end_timer!(prover_time);
@@ -216,16 +224,17 @@ impl<E: Pairing, QAP: R1CSToQAP> Groth16<E, QAP> {
         Ok(proof)
     }
 
-    /// Given a Groth16 proof, returns a fresh proof of the same statement. For a proof π of a
-    /// statement S, the output of the non-deterministic procedure `rerandomize_proof(π)` is
-    /// statistically indistinguishable from a fresh honest proof of S. For more info, see theorem 3 of
-    /// [\[BKSV20\]](https://eprint.iacr.org/2020/811)
+    /// Given a Groth16 proof, returns a fresh proof of the same statement. For
+    /// a proof π of a statement S, the output of the non-deterministic
+    /// procedure `rerandomize_proof(π)` is statistically indistinguishable
+    /// from a fresh honest proof of S. For more info, see theorem 3 of [\[BKSV20\]](https://eprint.iacr.org/2020/811)
     pub fn rerandomize_proof(
         vk: &VerifyingKey<E>,
         proof: &Proof<E>,
         rng: &mut impl Rng,
     ) -> Proof<E> {
-        // These are our rerandomization factors. They must be nonzero and uniformly sampled.
+        // These are our rerandomization factors. They must be nonzero and uniformly
+        // sampled.
         let (mut r1, mut r2) = (E::ScalarField::zero(), E::ScalarField::zero());
         while r1.is_zero() || r2.is_zero() {
             r1 = E::ScalarField::rand(rng);
