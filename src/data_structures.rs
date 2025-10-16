@@ -121,7 +121,7 @@ impl<E: Pairing> Default for PreparedVerifyingKey<E> {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// The prover key for for the Groth16 zkSNARK.
+/// The prover key for the Groth16 zkSNARK.
 #[derive(Clone, Debug, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct ProvingKey<E: Pairing> {
     /// The underlying verification key.
